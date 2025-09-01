@@ -1,0 +1,297 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  fullName      String
+  passwordHash  String    // SECURITY: Required for authentication
+  employeeId    String?   @unique
+  role          UserRole  @default(GUEST)
+  branchId      String?
+  branch        Branch?   @relation(fields: [branchId], references: [id])
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  observationsAsObserver    Observation[] @relation("Observer")
+  observationsAsReviewer    Observation[] @relation("Reviewer")
+  attachments              Attachment[]
+  auditLogs                AuditLog[]
+  createdNotifications     Notification[] @relation("NotificationCreator")
+  receivedNotifications    NotificationRecipient[] @relation("NotificationRecipient")
+
+  @@map("users")
+}
+
+model Branch {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users       User[]
+  teachers    Teacher[]
+  observations Observation[]
+
+  @@map("branches")
+}
+
+model Teacher {
+  id              String   @id @default(cuid())
+  fullName        String
+  employeeId      String   @unique
+  branchId        String
+  branch          Branch   @relation(fields: [branchId], references: [id])
+  subjectPrimary  String
+  subjectSecondary String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  observations    Observation[]
+
+  @@map("teachers")
+}
+
+model RubricDomain {
+  id          String      @id @default(cuid())
+  name        String
+  description String
+  orderIndex  Int
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  items       RubricItem[]
+  template    FormTemplate? @relation(fields: [templateId], references: [id])
+  templateId  String?
+
+  @@map("rubric_domains")
+}
+
+model RubricItem {
+  id          String      @id @default(cuid())
+  domainId    String
+  domain      RubricDomain @relation(fields: [domainId], references: [id])
+  number      Int
+  prompt      String
+  orderIndex  Int
+  maxScore    Int
+  scaleMin    Int         @default(0)
+  scaleMax    Int
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  itemScores  ObservationItemScore[]
+
+  @@map("rubric_items")
+}
+
+model Observation {
+  id                  String             @id @default(cuid())
+  observerId          String
+  observer            User               @relation("Observer", fields: [observerId], references: [id])
+  teacherId           String
+  teacher             Teacher            @relation(fields: [teacherId], references: [id])
+  branchId            String
+  branch              Branch             @relation(fields: [branchId], references: [id])
+  classSection        String
+  totalStudents       Int
+  presentStudents     Int
+  subject             String
+  topic               String
+  date                DateTime
+  time                String
+  lessonPlanAttached  Boolean           @default(false)
+  strengths           String?
+  areasToImprove      String?
+  suggestions         String?
+  status              ObservationStatus @default(DRAFT)
+  reviewerId          String?
+  reviewer            User?              @relation("Reviewer", fields: [reviewerId], references: [id])
+  reviewedAt          DateTime?
+  reviewerComments    String?
+  finalizedAt         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  // Relations
+  itemScores          ObservationItemScore[]
+  attachments         Attachment[]
+
+  @@map("observations")
+}
+
+model ObservationItemScore {
+  id              String      @id @default(cuid())
+  observationId   String
+  observation     Observation @relation(fields: [observationId], references: [id])
+  rubricItemId   String
+  rubricItem     RubricItem  @relation(fields: [rubricItemId], references: [id])
+  rating         Int?        // Rating value (0-5)
+  comment        String?     // Comment for this item
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([observationId, rubricItemId])
+  @@map("observation_item_scores")
+}
+
+model Attachment {
+  id              String      @id @default(cuid())
+  observationId   String
+  observation     Observation @relation(fields: [observationId], references: [id])
+  uploadedById   String
+  uploadedBy     User        @relation(fields: [uploadedById], references: [id])
+  fileName       String
+  fileType       String
+  fileUrl        String
+  size            Int
+  createdAt      DateTime    @default(now())
+
+  @@map("attachments")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  objectType  String
+  objectId    String
+  action      String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  diff        Json
+  createdAt   DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+model Settings {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String
+  updatedAt   DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model Notification {
+  id              String                    @id @default(cuid())
+  title           String
+  message         String
+  type            NotificationType
+  priority        NotificationPriority
+  targetAudience  NotificationTarget
+  isActive        Boolean                   @default(true)
+  scheduledFor    DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  createdById     String
+  createdBy       User                     @relation("NotificationCreator", fields: [createdById], references: [id])
+  readCount       Int                      @default(0)
+  totalRecipients Int                      @default(0)
+  recipients      NotificationRecipient[]
+
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String      @id @default(cuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id])
+  userId         String
+  user           User        @relation("NotificationRecipient", fields: [userId], references: [id])
+  isRead         Boolean     @default(false)
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@unique([notificationId, userId])
+  @@map("notification_recipients")
+}
+
+model FormTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  domains     RubricDomain[]
+
+  @@map("form_templates")
+}
+
+model CustomField {
+  id          String   @id @default(cuid())
+  name        String
+  fieldType   String   // text, number, select, date, etc.
+  label       String
+  placeholder String?
+  required    Boolean  @default(false)
+  options     Json?    // For select fields
+  orderIndex  Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("custom_fields")
+}
+
+enum UserRole {
+  ADMIN
+  OBSERVER
+  REVIEWER
+  TEACHER
+  GUEST
+}
+
+enum ObservationStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+  FINALIZED
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum NotificationTarget {
+  ALL
+  TEACHERS
+  OBSERVERS
+  REVIEWERS
+  ADMINS
+}
